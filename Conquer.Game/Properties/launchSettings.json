@@ -1,0 +1,11 @@
+﻿{
+  "profiles": {
+    "Conquer.Game": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}
