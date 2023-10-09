@@ -1,4 +1,6 @@
-﻿namespace Conquer.Game.Models;
+﻿using System.ComponentModel.DataAnnotations.Schema;
+
+namespace Conquer.Game.Models;
 
 public enum PkMode
 {
@@ -57,9 +59,8 @@ public enum Direction
     SouthEast
 }
 
-public class Player
+public class Player : IEntity
 {
-    public uint Id { get; set; }
     public string UserId { get; set; } = null!;
     public string Name { get; set; } = null!;
     public uint Model { get; set; }
@@ -78,11 +79,27 @@ public class Player
     public PkMode PkMode { get; set; }
     public short PkPoints { get; set; }
     public Profession Profession { get; set; }
-    public uint MapId { get; set; }
-    public ushort X { get; set; }
-    public ushort Y { get; set; }
     public Direction Direction { get; set; }
     public byte Rebirths { get; set; }
     public uint? SpouseId { get; set; }
     public Player? Spouse { get; set; }
+    public List<Item> Items { get; set; } = null!;
+    public List<WeaponSkill> WeaponSkills { get; set; } = null!;
+    public List<Magic> Magics { get; set; } = null!;
+
+    [NotMapped] public GameClient Client { get; set; } = null!;
+    [NotMapped] public uint LookFace => (uint)(Model + Avatar * 10000);
+    public uint? GuildId { get; set; }
+    public Guild? Guild { get; set; }
+    public GuildRank GuildRank { get; set; }
+    public uint GuildDonation { get; set; }
+    public PlayerStatus Status { get; set; }
+    public uint Id { get; set; }
+    public uint MapId { get; set; }
+    public ushort X { get; set; }
+    public ushort Y { get; set; }
+
+    public Item? GetItemById(uint id) => Items.FirstOrDefault(item => item.Id == id);
+
+    public Item? GetItemInPosition(ItemPosition position) => Items.FirstOrDefault(item => item.Position == position);
 }

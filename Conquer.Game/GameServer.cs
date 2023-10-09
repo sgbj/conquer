@@ -14,10 +14,10 @@ public class GameServer : ConnectionHandler
     private readonly MessageService _messageService;
     private readonly GameServerOptions _options;
 
-    public GameServer(IOptions<GameServerOptions> options, MessageService messageService)
+    public GameServer(MessageService messageService, IOptions<GameServerOptions> options)
     {
-        _options = options.Value;
         _messageService = messageService;
+        _options = options.Value;
     }
 
     public string Name => _options.Name;
@@ -39,9 +39,6 @@ public class GameServer : ConnectionHandler
             await _messageService.HandleAsync(client, message);
         }
 
-        if (client.Player is { })
-        {
-            Clients.TryRemove(client.Player.Id, out _);
-        }
+        await client.OnDisconnectedAsync();
     }
 }

@@ -8,7 +8,7 @@ public record MsgConnect : IMessage
 {
     public uint Id { get; set; }
     public uint Data { get; set; }
-    public string? Info { get; set; }
+    public string Info { get; set; } = null!;
     public ushort Size => 28;
     public MessageType Type => MessageType.MsgConnect;
 
@@ -47,6 +47,10 @@ public record MsgConnect : IMessage
 
         var player = await db.Players
             .Include(p => p.Spouse)
+            .Include(p => p.Items)
+            .Include(p => p.Magics)
+            .Include(p => p.WeaponSkills)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(p => p.UserId == client.UserId);
 
         // New player
@@ -57,6 +61,7 @@ public record MsgConnect : IMessage
         }
 
         client.Player = player;
+        player.Client = client;
 
         // Already logged in
         if (server.Clients.TryGetValue(player.Id, out var existing))
@@ -64,7 +69,6 @@ public record MsgConnect : IMessage
             existing.Abort();
         }
 
-        // Existing player
         server.Clients.TryAdd(player.Id, client);
 
         await client.WriteAsync(new MsgTalk(TalkChannel.Entrance, "SYSTEM", "ALLUSERS", "", "ANSWER_OK"));

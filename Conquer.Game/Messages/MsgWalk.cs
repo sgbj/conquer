@@ -52,6 +52,7 @@ public record MsgWalk : IMessage
         client.Player.X += (ushort)x;
         client.Player.Y += (ushort)y;
 
-        await client.WriteAsync(this);
+        await client.WriteScreenAsync(this);
+        await client.GameMap.UpdateAsync(client.Player);
     }
 }
