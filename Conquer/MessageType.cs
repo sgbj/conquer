@@ -42,10 +42,12 @@ public enum MessageType : ushort
     MsgNpcInfoEx,
     MsgMapInfo,
     MsgMessageBoard,
-    MsgDice = 1113,
+    MsgSynMemberInfo,
+    MsgDice,
     MsgSyncAction,
     MsgNpcInfo = 2030,
     MsgNpc,
     MsgTaskDialog,
+    MsgFriendInfo = 2033,
     MsgDataArray = 2036
 }

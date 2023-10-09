@@ -8,6 +8,7 @@ using System.Security.Cryptography;
 using Conquer;
 using Conquer.Cryptography;
 using Conquer.Game;
+using Conquer.Game.Workers;
 using Conquer.Middleware;
 using Conquer.Protocols;
 using Microsoft.AspNetCore.Connections;
@@ -27,7 +28,17 @@ builder.Services
     .AddTransient<IProtocol, SizeTypePrefixedProtocol>()
     .AddSingleton<MessageService>()
     .AddSingleton<GameServer>()
-    .AddSingleton<CommandService>();
+    .AddSingleton<CommandService>()
+    .AddSingleton<DMapService>()
+    .AddSingleton<ItemService>()
+    .AddSingleton<MapService>()
+    .AddSingleton<MonsterService>()
+    .AddSingleton<NpcService>()
+    .AddSingleton<PlayerService>();
+
+builder.Services
+    .AddHostedService<GeneratorWorker>()
+    .AddHostedService<MonsterWorker>();
 
 builder.Services.AddOptions<GameServerOptions>().BindConfiguration("GameServer");
 
@@ -51,5 +62,12 @@ app.MapGet("/transfer/{userId}", (string userId, IMemoryCache cache) =>
     cache.Set($"Transfer:{token}", userId, TimeSpan.FromMinutes(1));
     return token;
 });
+
+await app.Services.GetRequiredService<DMapService>().InitializeAsync();
+await app.Services.GetRequiredService<ItemService>().InitializeAsync();
+await app.Services.GetRequiredService<MapService>().InitializeAsync();
+await app.Services.GetRequiredService<MonsterService>().InitializeAsync();
+await app.Services.GetRequiredService<NpcService>().InitializeAsync();
+await app.Services.GetRequiredService<PlayerService>().InitializeAsync();
 
 app.Run();
