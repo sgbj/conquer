@@ -8,9 +8,9 @@ public class Rc5PasswordCipher : IPasswordCipher
     private const int WordSize = 16;
     private const int Rounds = 12;
     private const int KeySize = WordSize / 4;
-    private const int SubKeySize = 2 * (Rounds + 1);
+    private const int SubkeySize = 2 * (Rounds + 1);
     private static readonly uint[] Key = new uint[KeySize];
-    private static readonly uint[] SubKey = new uint[SubKeySize];
+    private static readonly uint[] Subkey = new uint[SubkeySize];
 
     static Rc5PasswordCipher()
     {
@@ -25,18 +25,18 @@ public class Rc5PasswordCipher : IPasswordCipher
             Key[i] = ReadUInt32LittleEndian(seed[(i * 4)..]);
         }
 
-        SubKey[0] = 0xB7E15163;
+        Subkey[0] = 0xB7E15163;
 
-        for (var i = 1; i < SubKeySize; i++)
+        for (var i = 1; i < SubkeySize; i++)
         {
-            SubKey[i] = SubKey[i - 1] - 0x61C88647;
+            Subkey[i] = Subkey[i - 1] - 0x61C88647;
         }
 
-        for (uint a = 0, b = 0, i = 0, j = 0, k = 0; k < 3 * SubKeySize; k++)
+        for (uint a = 0, b = 0, i = 0, j = 0, k = 0; k < 3 * SubkeySize; k++)
         {
-            a = SubKey[i] = RotateLeft(SubKey[i] + a + b, 3);
+            a = Subkey[i] = RotateLeft(Subkey[i] + a + b, 3);
             b = Key[j] = RotateLeft(Key[j] + a + b, (int)(a + b));
-            i = (i + 1) % SubKeySize;
+            i = (i + 1) % SubkeySize;
             j = (j + 1) % KeySize;
         }
     }
@@ -52,13 +52,13 @@ public class Rc5PasswordCipher : IPasswordCipher
 
         for (var word = 0; word < length; word++)
         {
-            var a = ReadUInt32LittleEndian(source[(8 * word)..]) + SubKey[0];
-            var b = ReadUInt32LittleEndian(destination[(8 * word + 4)..]) + SubKey[1];
+            var a = ReadUInt32LittleEndian(source[(8 * word)..]) + Subkey[0];
+            var b = ReadUInt32LittleEndian(destination[(8 * word + 4)..]) + Subkey[1];
 
             for (var round = 1; round <= Rounds; round++)
             {
-                a = RotateLeft(a ^ b, (int)b) + SubKey[2 * round];
-                b = RotateLeft(b ^ a, (int)a) + SubKey[2 * round + 1];
+                a = RotateLeft(a ^ b, (int)b) + Subkey[2 * round];
+                b = RotateLeft(b ^ a, (int)a) + Subkey[2 * round + 1];
             }
 
             WriteUInt32LittleEndian(destination[(8 * word)..], a);
@@ -82,12 +82,12 @@ public class Rc5PasswordCipher : IPasswordCipher
 
             for (var round = Rounds; round > 0; round--)
             {
-                b = RotateRight(b - SubKey[2 * round + 1], (int)a) ^ a;
-                a = RotateRight(a - SubKey[2 * round], (int)b) ^ b;
+                b = RotateRight(b - Subkey[2 * round + 1], (int)a) ^ a;
+                a = RotateRight(a - Subkey[2 * round], (int)b) ^ b;
             }
 
-            WriteUInt32LittleEndian(destination[(8 * word)..], a - SubKey[0]);
-            WriteUInt32LittleEndian(destination[(8 * word + 4)..], b - SubKey[1]);
+            WriteUInt32LittleEndian(destination[(8 * word)..], a - Subkey[0]);
+            WriteUInt32LittleEndian(destination[(8 * word + 4)..], b - Subkey[1]);
         }
     }
 }

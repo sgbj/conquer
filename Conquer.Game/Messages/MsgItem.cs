@@ -29,7 +29,7 @@ public enum ItemAction : uint
     SynchroAmount = 25,
     Fireworks = 26,
     CompleteTask = 27,
-    Enchant = 28,      
+    Enchant = 28
 }
 
 public record MsgItem : IMessage
@@ -45,14 +45,14 @@ public record MsgItem : IMessage
 
     public ushort X
     {
-        get => ReadUInt16LittleEndian(_data);
-        set => WriteUInt16LittleEndian(_data, value);
+        get => ReadUInt16LittleEndian(_data.AsSpan(2));
+        set => WriteUInt16LittleEndian(_data.AsSpan(2), value);
     }
 
     public ushort Y
     {
-        get => ReadUInt16LittleEndian(_data.AsSpan(2));
-        set => WriteUInt16LittleEndian(_data.AsSpan(2), value);
+        get => ReadUInt16LittleEndian(_data);
+        set => WriteUInt16LittleEndian(_data, value);
     }
 
     public ItemAction Action { get; set; }
@@ -79,13 +79,123 @@ public record MsgItem : IMessage
         WriteUInt32LittleEndian(buffer[16..], Timestamp);
     }
 
-    public Task HandleAsync(GameClient client, GameDbContext db, ILogger<MsgItem> logger)
+    public Task HandleAsync(GameClient client, GameDbContext db, PlayerService playerService, ItemService itemService,
+        ILogger<MsgItem> logger)
     {
         return Action switch
         {
+            ItemAction.Buy => Buy(),
+            ItemAction.Sell => Sell(),
+            ItemAction.Drop => Drop(),
+            ItemAction.Use => Use(),
+            ItemAction.Unequip => Unequip(),
             ItemAction.CompleteTask => CompleteTask(),
             _ => Default()
         };
+
+        async Task Buy()
+        {
+            if (itemService.ItemTypes.TryGetValue(Data, out var itemType))
+            {
+                client.Player.Money -= itemType.Price;
+                await client.WriteAsync(new MsgUserAttrib
+                {
+                    Id = client.Player.Id,
+                    Attributes = new() { (AttributeType.Money, client.Player.Money) }
+                });
+            }
+        }
+
+        async Task Sell()
+        {
+            if (itemService.ItemTypes.TryGetValue(Data, out var itemType))
+            {
+                client.Player.Money += itemType.Price / 3;
+                await client.WriteAsync(new MsgUserAttrib
+                {
+                    Id = client.Player.Id,
+                    Attributes = new() { (AttributeType.Money, client.Player.Money) }
+                });
+            }
+        }
+
+        async Task Drop()
+        {
+            var item = client.Player.GetItemById(Id);
+
+            if (item is null)
+            {
+                return;
+            }
+
+            client.Player.Items.Remove(item);
+            db.Remove(item);
+            await db.SaveChangesAsync();
+
+            var mapItem = new MapItem
+            {
+                Id = itemService.NextMapItemId(),
+                MapId = client.Player.MapId,
+                X = X,
+                Y = Y,
+                Item = item
+            };
+
+            await client.GameMap.AddAsync(mapItem);
+        }
+
+        async Task Use()
+        {
+            // Use item
+            if (Data == 0)
+            {
+                return;
+            }
+
+            // Equip item
+            var item = client.Player.Items.FirstOrDefault(i => i.Id == Id);
+
+            if (item is null)
+            {
+                logger.LogWarning("Item {Id} does not exist.", Id);
+                return;
+            }
+
+            var position = (ItemPosition)Data;
+
+            // Unequip current item
+            var currentItem = client.Player.Items.FirstOrDefault(i => i.Position == position);
+            if (currentItem is { })
+            {
+                currentItem.Position = ItemPosition.Inventory;
+                db.Update(currentItem);
+            }
+
+            item.Position = position;
+            db.Update(item);
+            await db.SaveChangesAsync();
+
+            await client.WriteAsync(new MsgItem
+            {
+                Id = Id,
+                Data = (uint)position,
+                Action = ItemAction.Equip
+            });
+        }
+
+        async Task Unequip()
+        {
+            var item = client.Player.Items.FirstOrDefault(i => i.Id == Id);
+
+            if (item is { })
+            {
+                item.Position = ItemPosition.Inventory;
+                db.Update(item);
+                await db.SaveChangesAsync();
+            }
+
+            await client.WriteAsync(this);
+        }
 
         async Task CompleteTask()
         {

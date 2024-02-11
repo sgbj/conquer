@@ -54,7 +54,9 @@ public enum TalkStyles : ushort
 
 public record MsgTalk : IMessage
 {
-    public MsgTalk() => Strings = new();
+    public MsgTalk()
+    {
+    }
 
     public MsgTalk(TalkChannel channel, params string[] strings) =>
         (Channel, Strings) = (channel, strings.ToList());
@@ -63,7 +65,7 @@ public record MsgTalk : IMessage
     public TalkChannel Channel { get; set; }
     public TalkStyles Styles { get; set; } = TalkStyles.Normal;
     public uint Timestamp { get; set; } = (uint)Environment.TickCount;
-    public List<string> Strings { get; set; }
+    public List<string> Strings { get; set; } = null!;
 
     public ushort Size => (ushort)(16 + GetByteCount(Strings));
     public MessageType Type => MessageType.MsgTalk;

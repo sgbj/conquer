@@ -2,12 +2,14 @@
 
 public record MsgUserInfo : IMessage
 {
-    public MsgUserInfo() => Strings = new();
+    public MsgUserInfo()
+    {
+    }
 
     public MsgUserInfo(Player player)
     {
         Id = player.Id;
-        LookFace = (uint)(player.Model + player.Avatar * 10000);
+        LookFace = player.LookFace;
         Hair = player.Hair;
         Money = player.Money;
         Experience = player.Experience;
@@ -43,7 +45,7 @@ public record MsgUserInfo : IMessage
     public Profession Profession { get; set; }
     public bool AutoAllot { get; set; }
     public byte Rebirths { get; set; }
-    public List<string> Strings { get; set; }
+    public List<string> Strings { get; set; } = null!;
 
     public ushort Size => (ushort)(61 + GetByteCount(Strings));
     public MessageType Type => MessageType.MsgUserInfo;

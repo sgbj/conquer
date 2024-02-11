@@ -1,4 +1,6 @@
-﻿namespace Conquer.Game.Messages;
+﻿using Microsoft.EntityFrameworkCore;
+
+namespace Conquer.Game.Messages;
 
 public enum ActionType : ushort
 {
@@ -110,13 +112,27 @@ public record MsgAction : IMessage
         WriteUInt16LittleEndian(buffer[22..], (ushort)Action);
     }
 
-    public Task HandleAsync(GameClient client, ILogger<MsgAction> logger)
+    public Task HandleAsync(GameClient client, GameDbContext db, MapService mapService, ILogger<MsgAction> logger)
     {
         return Action switch
         {
             ActionType.GetPosition => GetPosition(),
+            ActionType.GetItemSet => GetItemSet(),
+            ActionType.GetGoodFriend => GetGoodFriend(),
+            ActionType.GetWeaponSkillSet => GetWeaponSkillSet(),
+            ActionType.GetMagicSet => GetMagicSet(),
+            ActionType.ChgDir => ChgDir(),
+            ActionType.Emotion => Emotion(),
             ActionType.ChgMap => ChgMap(),
+            ActionType.DelRole => DelRole(),
+            ActionType.SetPkMode => SetPkMode(),
+            ActionType.GetSynAttr => GetSynAttr(),
+            ActionType.DestroyBooth => DestroyBooth(),
+            ActionType.QueryEnemyInfo => QueryEnemyInfo(),
+            ActionType.LoginCompleted => LoginCompleted(),
+            ActionType.QueryFriendInfo => QueryFriendInfo(),
             ActionType.Jump => Jump(),
+            ActionType.ChangeFace => ChangeFace(),
             _ => Default()
         };
 
@@ -126,34 +142,219 @@ public record MsgAction : IMessage
             DataUInt1 = client.Player.MapId;
             DataUShort3 = client.Player.X;
             DataUShort4 = client.Player.Y;
+
             await client.WriteAsync(this);
+        }
+
+        async Task GetItemSet()
+        {
+            foreach (var item in client.Player.Items)
+            {
+                await client.WriteAsync(new MsgItemInfo(item, ItemInfoAction.AddItem));
+            }
+
+            await client.WriteAsync(this);
+        }
+
+        async Task GetGoodFriend()
+        {
+            var friends = await db.Friends
+                .Where(friend => friend.PlayerId == client.Player.Id)
+                .Select(friend => new { friend.FriendPlayerId, FriendPlayerName = friend.FriendPlayer.Name })
+                .ToListAsync();
+
+            foreach (var friend in friends)
+            {
+                await client.WriteAsync(new MsgFriend(friend.FriendPlayerId, FriendAction.GetInfo,
+                    client.Server.Clients.ContainsKey(friend.FriendPlayerId), friend.FriendPlayerName));
+            }
+
+            var enemies = await db.Enemies
+                .Where(enemy => enemy.PlayerId == client.Player.Id)
+                .Select(enemy => new { enemy.EnemyPlayerId, EnemyPlayerName = enemy.EnemyPlayer.Name })
+                .ToListAsync();
+
+            foreach (var enemy in enemies)
+            {
+                await client.WriteAsync(new MsgFriend(enemy.EnemyPlayerId, FriendAction.EnemyAdd,
+                    client.Server.Clients.ContainsKey(enemy.EnemyPlayerId), enemy.EnemyPlayerName));
+            }
+
+            await client.WriteAsync(this);
+        }
+
+        async Task GetWeaponSkillSet()
+        {
+            foreach (var weaponSkill in client.Player.WeaponSkills)
+            {
+                await client.WriteAsync(new MsgWeaponSkill(weaponSkill));
+            }
+
+            await client.WriteAsync(this);
+        }
+
+        async Task GetMagicSet()
+        {
+            foreach (var magic in client.Player.Magics)
+            {
+                await client.WriteAsync(new MsgMagicInfo(magic));
+            }
+
+            await client.WriteAsync(this);
+        }
+
+        async Task ChgDir()
+        {
+            client.Player.Direction = (Direction)Direction;
+
+            await client.WriteScreenAsync(this);
+        }
+
+        async Task Emotion()
+        {
+            await client.WriteScreenAsync(this);
         }
 
         async Task ChgMap()
         {
-            client.Player.MapId = 1002;
-            client.Player.X = 438;
-            client.Player.Y = 377;
-            await client.WriteAsync(new MsgAction
+            var portal = mapService.GetPortal(client.Player.MapId, DataUShort1, DataUShort2);
+
+            if (portal is null)
             {
-                Id = client.Player.Id,
-                DataUInt1 = client.Player.MapId,
-                DataUShort3 = client.Player.X,
-                DataUShort4 = client.Player.Y,
-                Action = ActionType.EnterMap
-            });
+                return;
+            }
+
+            if (mapService.GameMaps.TryGetValue(client.Player.MapId, out var gameMap))
+            {
+                await client.GameMap.RemoveAsync(client.Player);
+
+                client.Player.MapId = portal.MapId;
+                client.Player.X = portal.PortalX;
+                client.Player.Y = portal.PortalY;
+
+                await client.WriteAsync(new MsgAction
+                {
+                    Id = client.Player.Id,
+                    DataUInt1 = client.Player.MapId,
+                    DataUShort3 = client.Player.X,
+                    DataUShort4 = client.Player.Y,
+                    Action = ActionType.EnterMap
+                });
+
+                await gameMap.AddAsync(client.Player);
+            }
+        }
+
+        async Task DelRole()
+        {
+            db.Remove(client.Player);
+            await db.SaveChangesAsync();
+            client.Abort();
+        }
+
+        async Task SetPkMode()
+        {
+            client.Player.PkMode = (PkMode)DataUInt1;
+            await client.WriteAsync(this);
+        }
+
+        async Task GetSynAttr()
+        {
+            if (client.Player.GuildId.HasValue)
+            {
+                var guild = db.Guilds
+                    .Select(guild => new
+                    {
+                        guild.Id,
+                        guild.Name,
+                        guild.Fund,
+                        Leader = guild.Members.FirstOrDefault(member => member.GuildRank == GuildRank.Leader)!.Name,
+                        Members = guild.Members.Count,
+                        guild.Allies,
+                        guild.Enemies
+                    })
+                    .AsSplitQuery()
+                    .First(guild => guild.Id == client.Player.GuildId);
+
+                await client.WriteAsync(new MsgSyndicateAttributeInfo
+                {
+                    GuildId = guild.Id,
+                    Donation = client.Player.GuildDonation,
+                    Fund = guild.Fund,
+                    Members = (uint)guild.Members,
+                    GuildRank = client.Player.GuildRank,
+                    Leader = guild.Leader
+                });
+
+                foreach (var ally in guild.Allies)
+                {
+                    await client.WriteAsync(new MsgSyndicate
+                    {
+                        Data = ally.AllyGuildId,
+                        Action = SyndicateAction.SetAlly
+                    });
+                }
+
+                foreach (var enemy in guild.Enemies)
+                {
+                    await client.WriteAsync(new MsgSyndicate
+                    {
+                        Data = enemy.EnemyGuildId,
+                        Action = SyndicateAction.SetAntagonize
+                    });
+                }
+            }
+
+            await client.WriteAsync(this);
+        }
+
+        async Task DestroyBooth()
+        {
+            await client.WriteAsync(this);
+        }
+
+        async Task QueryEnemyInfo()
+        {
+            if (client.Server.Clients.TryGetValue(DataUInt1, out var other))
+            {
+                await client.WriteAsync(new MsgFriendInfo(other.Player));
+            }
+        }
+
+        async Task LoginCompleted()
+        {
+            if (mapService.GameMaps.TryGetValue(client.Player.MapId, out var gameMap))
+            {
+                await gameMap.AddAsync(client.Player);
+            }
         }
 
         async Task Jump()
         {
             client.Player.X = DataUShort1;
             client.Player.Y = DataUShort2;
-            await client.WriteAsync(this);
+
+            await client.WriteScreenAsync(this);
+            await client.GameMap.UpdateAsync(client.Player);
+        }
+
+        async Task QueryFriendInfo()
+        {
+            if (client.Server.Clients.TryGetValue(DataUInt1, out var other))
+            {
+                await client.WriteAsync(new MsgFriendInfo(other.Player));
+            }
+        }
+
+        async Task ChangeFace()
+        {
+            client.Player.Avatar = DataUShort1;
+            await client.WriteScreenAsync(this);
         }
 
         async Task Default()
         {
-            logger.LogWarning("Unhandle action {Action}.", Action);
+            logger.LogWarning("Unhandled action {Action}.", Action);
             await client.WriteAsync(this);
         }
     }
